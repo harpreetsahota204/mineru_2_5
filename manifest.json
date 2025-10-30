@@ -1,0 +1,29 @@
+{
+    "name": "deepseek_ocr",
+    "url": "https://github.com/harpreetsahota204/deepseek_ocr",
+    "models": [
+        {
+            "base_name": "opendatalab/MinerU2.5-2509-1.2B",
+            "base_filename":"MinerU2_5",
+            "author": "OpenDataLab",
+            "license": "AGPL-3.0",
+            "source": "https://huggingface.co/opendatalab/MinerU2.5-2509-1.2B",
+            "description": "MinerU2.5 is a 1.2B-parameter vision-language model for document parsing. It adopts a two-stage parsing strategy: first conducting efficient global layout analysis on downsampled images, then performing fine-grained content recognition on native-resolution crops for text, formulas, and tables.",
+            "tags": [
+                "detection",
+                "ocr",
+                "VLM"
+            ],
+            "date_added": "2025-10-30",
+            "requirements": {
+                "packages": ["huggingface-hub", "transformers", "torch", "torchvision", "mineru-vl-utils"],
+                "cpu": {
+                    "support": true
+                },
+                "gpu": {
+                    "support": true
+                }
+            }
+        }
+    ]
+}
