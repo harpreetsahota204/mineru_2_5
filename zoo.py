@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # Operation modes that determine extraction method and output format
 OPERATIONS = {
     "ocr_detection": {
-        "method": "ocr_detection_extract",
+        "method": "two_step_extract",
         "return_type": "detections",
         "description": "Structured document extraction with bounding boxes"
     },
