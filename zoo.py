@@ -17,12 +17,12 @@ logger = logging.getLogger(__name__)
 
 # Operation modes that determine extraction method and output format
 OPERATIONS = {
-    "two_step": {
-        "method": "two_step_extract",
+    "ocr_detection": {
+        "method": "ocr_detection_extract",
         "return_type": "detections",
         "description": "Structured document extraction with bounding boxes"
     },
-    "content": {
+    "ocr": {
         "method": "content_extract",
         "return_type": "text",
         "description": "Plain text OCR extraction"
@@ -43,8 +43,8 @@ class MinerU(Model, SamplesMixin):
     """FiftyOne model for MinerU 2.5 document extraction.
     
     Supports two operation modes:
-    - two_step: Structured extraction with bounding boxes (returns fo.Detections)
-    - content: Plain text OCR extraction (returns str)
+    - ocr_detection: Structured extraction with bounding boxes (returns fo.Detections)
+    - ocr: Plain text OCR extraction (returns str)
     
     Automatically selects optimal dtype based on hardware:
     - bfloat16 for CUDA devices with compute capability 8.0+ (Ampere and newer)
@@ -53,13 +53,13 @@ class MinerU(Model, SamplesMixin):
     
     Args:
         model_path: HuggingFace model ID or local path (default: "opendatalab/MinerU2.5-2509-1.2B")
-        operation: Task type - "two_step", "content" (default: "two_step")
+        operation: Task type - "ocr_detection", "ocr" (default: "ocr_detection")
     """
     
     def __init__(
         self,
         model_path: str = "opendatalab/MinerU2.5-2509-1.2B",
-        operation: str = "two_step",
+        operation: str = "ocr_detection",
         **kwargs
     ):
         SamplesMixin.__init__(self)
@@ -161,7 +161,7 @@ class MinerU(Model, SamplesMixin):
         """Convert MinerU blocks to FiftyOne Detections.
         
         Args:
-            blocks: List of dicts with 'type', 'bbox', 'angle', 'content'
+            blocks: List of dicts with 'type', 'bbox', 'angle', 'text'
                    bbox format: [x1, y1, x2, y2] in normalized coordinates [0, 1]
         
         Returns:
@@ -181,7 +181,7 @@ class MinerU(Model, SamplesMixin):
                 label=block['type'],
                 bounding_box=[x1, y1, width, height],
                 angle=block.get('angle', 0),
-                content=block.get('content', '')
+                text=block.get('content', '')
             )
             
             detections.append(detection)
@@ -195,7 +195,7 @@ class MinerU(Model, SamplesMixin):
             image: PIL Image to process
         
         Returns:
-            - fo.Detections if operation="two_step" (with bounding boxes)
+            - fo.Detections if operation="ocr_detection" (with bounding boxes)
             - str if operation="content" (plain text)
         """
         # Get the extraction method based on operation
@@ -220,7 +220,7 @@ class MinerU(Model, SamplesMixin):
         
         Returns:
             Model predictions in the appropriate format for the current operation:
-            - fo.Detections for "two_step" operation
+            - fo.Detections for "ocr_detection" operation
             - str for "content" operation
         """
         if isinstance(image, np.ndarray):
