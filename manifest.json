@@ -1,6 +1,6 @@
 {
-    "name": "deepseek_ocr",
-    "url": "https://github.com/harpreetsahota204/deepseek_ocr",
+    "name": "MinerU2_5",
+    "url": "https://github.com/harpreetsahota204/mineru_2_5",
     "models": [
         {
             "base_name": "opendatalab/MinerU2.5-2509-1.2B",
