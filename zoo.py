@@ -81,10 +81,8 @@ class MinerU(Model, SamplesMixin):
         logger.info(f"Loading MinerU 2.5 from {model_path}")
 
         model_kwargs = {
-            "dtype": self.dtype,
             "device_map": self.device,
         }
-        model_kwargs.update(kwargs)
 
         # Device setup
         self.device = get_device()
