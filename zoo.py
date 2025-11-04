@@ -46,10 +46,6 @@ class MinerU(Model, SamplesMixin):
     - ocr_detection: Structured extraction with bounding boxes (returns fo.Detections)
     - ocr: Plain text OCR extraction (returns str)
     
-    Automatically selects optimal dtype based on hardware:
-    - bfloat16 for CUDA devices with compute capability 8.0+ (Ampere and newer)
-    - float16 for older CUDA devices
-    - float32 for CPU/MPS devices
     
     Args:
         model_path: HuggingFace model ID or local path (default: "opendatalab/MinerU2.5-2509-1.2B")
@@ -82,6 +78,7 @@ class MinerU(Model, SamplesMixin):
 
         model_kwargs = {
             "device_map": self.device,
+            "dtype":"auto"
         }
 
         # Device setup
@@ -91,20 +88,10 @@ class MinerU(Model, SamplesMixin):
         # Load processor and model
         logger.info(f"Loading MinerU 2.5 from {model_path}")
 
-        model_kwargs = {
-            "device_map": self.device,
-        }
-
-        if self.device == "cuda" and torch.cuda.is_available():
-            capability = torch.cuda.get_device_capability()
-            
+        if self.device == "cuda" and torch.cuda.is_available():            
             # Enable flash attention if available
             if is_flash_attn_2_available():
                 model_kwargs["attn_implementation"] = "flash_attention_2"
-            
-            # Enable bfloat16 on Ampere+ GPUs (compute capability 8.0+)
-            if capability[0] >= 8:
-                model_kwargs["dtype"] = torch.bfloat16
         
         self.processor = AutoProcessor.from_pretrained(
             model_path,
