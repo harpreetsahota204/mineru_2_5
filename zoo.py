@@ -1,4 +1,8 @@
 import logging
+import sys
+import io
+import warnings
+from contextlib import contextmanager
 from typing import Union, List, Dict
 
 from PIL import Image
@@ -13,6 +17,29 @@ from transformers.utils import is_flash_attn_2_available
 from mineru_vl_utils import MinerUClient
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def suppress_output():
+    """Suppress stdout, stderr, warnings, and transformers logging."""
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    sys.stdout = io.StringIO()
+    sys.stderr = io.StringIO()
+    
+    # Suppress transformers logging
+    transformers_logger = logging.getLogger("transformers")
+    old_transformers_level = transformers_logger.level
+    transformers_logger.setLevel(logging.ERROR)
+    
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            yield
+    finally:
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+        transformers_logger.setLevel(old_transformers_level)
 
 
 # Operation modes that determine extraction method and output format
@@ -181,14 +208,15 @@ class MinerU(Model, SamplesMixin):
         
         Returns:
             - fo.Detections if operation="ocr_detection" (with bounding boxes)
-            - str if operation="content" (plain text)
+            - str if operation="ocr" (plain text)
         """
         # Get the extraction method based on operation
         method_name = OPERATIONS[self._operation]["method"]
         method = getattr(self.client, method_name)
         
-        # Run inference
-        result = method(image)
+        # Run inference with suppressed output
+        with suppress_output():
+            result = method(image)
         
         # Parse output based on return type
         if self._get_return_type() == "detections":
