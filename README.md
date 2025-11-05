@@ -24,6 +24,20 @@ pip install fiftyone
 pip install "mineru-vl-utils[transformers]"
 ```
 
+### Optional: Install Caption Viewer Plugin
+
+For the best experience viewing extracted text, we recommend installing the [Caption Viewer plugin](https://github.com/harpreetsahota204/caption_viewer), which provides intelligent formatting for OCR outputs and text fields:
+
+```bash
+fiftyone plugins download https://github.com/harpreetsahota204/caption_viewer
+```
+
+This plugin automatically:
+- Renders line breaks and escape sequences properly
+- Converts HTML tables to markdown
+- Pretty-prints JSON content
+- Shows character counts
+
 ## Usage in FiftyOne
 
 ### Register the Model Source
@@ -107,6 +121,9 @@ dataset.apply_model(model, label_field="text_extraction")
 
 # Launch the app
 session = fo.launch_app(dataset)
+
+# Tip: Use the Caption Viewer plugin to view formatted text outputs
+# Install with: fiftyone plugins download https://github.com/harpreetsahota204/caption_viewer
 ```
 
 ## Model Configuration
