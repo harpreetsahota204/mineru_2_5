@@ -123,6 +123,7 @@ class MinerU(Model, SupportsGetItem):
         self.model_path = model_path
         self._operation = operation
         self.batch_size = batch_size
+        self._preprocess = False  # Preprocessing happens in GetItem
         
         # Validate operation
         if operation not in OPERATIONS:
@@ -172,6 +173,20 @@ class MinerU(Model, SupportsGetItem):
     def media_type(self):
         """The media type processed by this model."""
         return "image"
+    
+    @property
+    def preprocess(self):
+        """Whether preprocessing should be applied.
+        
+        For SupportsGetItem models, preprocessing is handled by the GetItem
+        transform, so this should be False when using the DataLoader path.
+        """
+        return self._preprocess
+    
+    @preprocess.setter
+    def preprocess(self, value):
+        """Set preprocessing flag."""
+        self._preprocess = value
     
     @property
     def operation(self):
@@ -247,20 +262,24 @@ class MinerU(Model, SupportsGetItem):
         
         return fo.Detections(detections=detections)
     
-    def predict_all(self, images, preprocess=True):
+    def predict_all(self, images, preprocess=None):
         """Batch prediction for multiple images.
         
         This method enables efficient batching when using dataset.apply_model().
         
         Args:
-            images: List of PIL Images (if preprocess=False) or numpy arrays (if preprocess=True)
-            preprocess: If True, convert numpy arrays to PIL Images. If False, images are already PIL.
+            images: List of PIL Images (from GetItem) or numpy arrays
+            preprocess: If True, convert numpy to PIL. If None, uses self.preprocess.
         
         Returns:
             List of predictions based on operation:
             - List[fo.Detections] for "layout_detection" or "ocr_detection"
             - List[str] for "ocr"
         """
+        # Use instance preprocess flag if not specified
+        if preprocess is None:
+            preprocess = self._preprocess
+        
         # Preprocess if needed (convert numpy to PIL)
         if preprocess:
             pil_images = []
@@ -271,6 +290,14 @@ class MinerU(Model, SupportsGetItem):
                     raise ValueError(f"Expected PIL Image or numpy array, got {type(img)}")
                 pil_images.append(img)
             images = pil_images
+        else:
+            # Images should already be PIL Images from GetItem
+            # But ensure they are
+            if images and not isinstance(images[0], Image.Image):
+                raise ValueError(
+                    f"When preprocess=False, images must be PIL Images. "
+                    f"Got {type(images[0]) if images else 'empty list'}"
+                )
         
         # Get the batch method name based on operation
         method_name = OPERATIONS[self._operation]["method"]
