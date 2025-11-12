@@ -189,6 +189,22 @@ class MinerU(Model, SupportsGetItem):
         self._preprocess = value
     
     @property
+    def has_collate_fn(self):
+        """Whether this model provides a custom collate function.
+        
+        Returns False since we use the default collation.
+        """
+        return False
+    
+    @property
+    def collate_fn(self):
+        """Custom collate function for the DataLoader.
+        
+        Not used since has_collate_fn returns False.
+        """
+        return None
+    
+    @property
     def operation(self):
         """Current operation mode."""
         return self._operation
