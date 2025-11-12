@@ -10,7 +10,9 @@ import numpy as np
 import torch
 
 import fiftyone as fo
-from fiftyone import Model, SamplesMixin
+from fiftyone import Model
+from fiftyone.core.models import SupportsGetItem
+from fiftyone.utils.torch import GetItem
 
 from transformers import AutoProcessor, Qwen2VLForConditionalGeneration
 from transformers.utils import is_flash_attn_2_available
@@ -44,15 +46,20 @@ def suppress_output():
 
 # Operation modes that determine extraction method and output format
 OPERATIONS = {
+    "layout_detection": {
+        "method": "layout_detect",
+        "return_type": "detections",
+        "description": "FAST: Layout detection with bounding boxes only (1 inference pass)"
+    },
     "ocr_detection": {
         "method": "two_step_extract",
         "return_type": "detections",
-        "description": "Structured document extraction with bounding boxes"
+        "description": "SLOW: Full extraction with bounding boxes and OCR content (N+1 passes)"
     },
     "ocr": {
         "method": "content_extract",
         "return_type": "text",
-        "description": "Plain text OCR extraction"
+        "description": "FAST: Plain text OCR extraction (1 inference pass)"
     }
 }
 
@@ -66,28 +73,56 @@ def get_device():
     return "cpu"
 
 
-class MinerU(Model, SamplesMixin):
-    """FiftyOne model for MinerU 2.5 document extraction.
+class MinerUGetItem(GetItem):
+    """GetItem transform for batching MinerU inference.
     
-    Supports two operation modes:
-    - ocr_detection: Structured extraction with bounding boxes (returns fo.Detections)
-    - ocr: Plain text OCR extraction (returns str)
+    Loads images as PIL Images for processing by MinerU.
+    """
     
+    @property
+    def required_keys(self):
+        """Fields required from each sample."""
+        return ["filepath"]
+    
+    def __call__(self, sample_dict):
+        """Load and return PIL Image.
+        
+        Args:
+            sample_dict: Dictionary with 'filepath' key
+            
+        Returns:
+            PIL.Image: RGB image loaded from filepath
+        """
+        filepath = sample_dict["filepath"]
+        image = Image.open(filepath).convert("RGB")
+        return image
+
+
+class MinerU(Model, SupportsGetItem):
+    """FiftyOne model for MinerU 2.5 document extraction with batching support.
+    
+    Supports three operation modes:
+    - layout_detection: FAST - Layout detection with bounding boxes only (1 inference pass)
+    - ocr_detection: SLOW - Full extraction with bounding boxes and OCR content (N+1 passes)
+    - ocr: FAST - Plain text OCR extraction (1 inference pass)
     
     Args:
         model_path: HuggingFace model ID or local path (default: "opendatalab/MinerU2.5-2509-1.2B")
-        operation: Task type - "ocr_detection", "ocr" (default: "ocr_detection")
+        operation: Task type - "layout_detection", "ocr_detection", "ocr" (default: "layout_detection")
+        batch_size: Batch size for inference (default: 8)
     """
     
     def __init__(
         self,
         model_path: str = "opendatalab/MinerU2.5-2509-1.2B",
-        operation: str = "ocr_detection",
+        operation: str = "layout_detection",
+        batch_size: int = 8,
         **kwargs
     ):
-        SamplesMixin.__init__(self)
+        SupportsGetItem.__init__(self)
         self.model_path = model_path
         self._operation = operation
+        self.batch_size = batch_size
         
         # Validate operation
         if operation not in OPERATIONS:
@@ -104,16 +139,8 @@ class MinerU(Model, SamplesMixin):
         logger.info(f"Loading MinerU 2.5 from {model_path}")
 
         model_kwargs = {
-            "device_map": self.device,
-            "dtype":"auto"
+            "torch_dtype": torch.float16 if self.device == "cuda" else torch.float32,
         }
-
-        # Device setup
-        self.device = get_device()
-        logger.info(f"Using device: {self.device}")
-
-        # Load processor and model
-        logger.info(f"Loading MinerU 2.5 from {model_path}")
 
         if self.device == "cuda" and torch.cuda.is_available():            
             # Enable flash attention if available
@@ -129,16 +156,17 @@ class MinerU(Model, SamplesMixin):
             model_path,
             **model_kwargs
         )
-        self.model = self.model.eval()
+        self.model = self.model.to(self.device).eval()
         
-        # Initialize MinerU client
+        # Initialize MinerU client with batch support
         self.client = MinerUClient(
             backend="transformers",
             model=self.model,
-            processor=self.processor
+            processor=self.processor,
+            batch_size=batch_size,
         )
         
-        logger.info("MinerU 2.5 model loaded successfully")
+        logger.info(f"MinerU 2.5 model loaded successfully (batch_size={batch_size})")
     
     @property
     def media_type(self):
@@ -161,6 +189,14 @@ class MinerU(Model, SamplesMixin):
         self._operation = value
         logger.info(f"Operation changed to: {value}")
     
+    def get_item(self):
+        """Return the GetItem transform for batching support.
+        
+        Returns:
+            MinerUGetItem: GetItem instance for loading images
+        """
+        return MinerUGetItem()
+    
     def _get_return_type(self):
         """Determine return type based on operation.
         
@@ -169,11 +205,11 @@ class MinerU(Model, SamplesMixin):
         """
         return OPERATIONS[self._operation]["return_type"]
     
-    def _to_detections(self, blocks: List[Dict]) -> fo.Detections:
+    def _to_detections(self, blocks: List) -> fo.Detections:
         """Convert MinerU blocks to FiftyOne Detections.
         
         Args:
-            blocks: List of dicts with 'type', 'bbox', 'angle', 'text'
+            blocks: List of ContentBlock objects or dicts with 'type', 'bbox', 'angle', 'content'
                    bbox format: [x1, y1, x2, y2] in normalized coordinates [0, 1]
         
         Returns:
@@ -182,33 +218,95 @@ class MinerU(Model, SamplesMixin):
         detections = []
         
         for block in blocks:
-            # bbox is already [x1, y1, x2, y2] in normalized coords
-            x1, y1, x2, y2 = block['bbox']
+            # Handle both ContentBlock objects and dicts
+            if hasattr(block, 'bbox'):
+                # ContentBlock object (from layout_detect or two_step_extract)
+                x1, y1, x2, y2 = block.bbox
+                label = block.type
+                angle = block.angle if block.angle is not None else 0
+                text = block.content if block.content is not None else ''
+            else:
+                # Dict format (fallback)
+                x1, y1, x2, y2 = block['bbox']
+                label = block['type']
+                angle = block.get('angle', 0)
+                text = block.get('content', '')
             
             # Convert to FiftyOne format: [x, y, width, height]
             width = x2 - x1
             height = y2 - y1
             
             detection = fo.Detection(
-                label=block['type'],
+                label=label,
                 bounding_box=[x1, y1, width, height],
-                angle=block.get('angle', 0),
-                text=block.get('content', '')
+                angle=angle,
+                text=text
             )
             
             detections.append(detection)
         
         return fo.Detections(detections=detections)
     
+    def predict_all(self, images, preprocess=True):
+        """Batch prediction for multiple images.
+        
+        This method enables efficient batching when using dataset.apply_model().
+        
+        Args:
+            images: List of PIL Images (if preprocess=False) or numpy arrays (if preprocess=True)
+            preprocess: If True, convert numpy arrays to PIL Images. If False, images are already PIL.
+        
+        Returns:
+            List of predictions based on operation:
+            - List[fo.Detections] for "layout_detection" or "ocr_detection"
+            - List[str] for "ocr"
+        """
+        # Preprocess if needed (convert numpy to PIL)
+        if preprocess:
+            pil_images = []
+            for img in images:
+                if isinstance(img, np.ndarray):
+                    img = Image.fromarray(img)
+                elif not isinstance(img, Image.Image):
+                    raise ValueError(f"Expected PIL Image or numpy array, got {type(img)}")
+                pil_images.append(img)
+            images = pil_images
+        
+        # Get the batch method name based on operation
+        method_name = OPERATIONS[self._operation]["method"]
+        
+        # Call the appropriate batch method
+        with suppress_output():
+            if method_name == "layout_detect":
+                # Fast: Only layout detection (1 pass per image)
+                blocks_list = self.client.batch_layout_detect(images)
+                
+            elif method_name == "two_step_extract":
+                # Slow: Full extraction (N+1 passes per image)
+                blocks_list = self.client.batch_two_step_extract(images)
+                
+            elif method_name == "content_extract":
+                # Fast: Content extraction only (1 pass per image)
+                results = self.client.batch_content_extract(images)
+                return results
+            else:
+                raise ValueError(f"Unknown method: {method_name}")
+        
+        # Convert to detections if needed
+        if self._get_return_type() == "detections":
+            return [self._to_detections(blocks) for blocks in blocks_list]
+        
+        return blocks_list
+    
     def _predict(self, image: Image.Image) -> Union[fo.Detections, str]:
-        """Process image through MinerU.
+        """Process image through MinerU (single image).
         
         Args:
             image: PIL Image to process
         
         Returns:
-            - fo.Detections if operation="ocr_detection" (with bounding boxes)
-            - str if operation="ocr" (plain text)
+            - fo.Detections if operation="layout_detection" or "ocr_detection"
+            - str if operation="ocr"
         """
         # Get the extraction method based on operation
         method_name = OPERATIONS[self._operation]["method"]
@@ -225,16 +323,19 @@ class MinerU(Model, SamplesMixin):
         return result
     
     def predict(self, image, sample=None):
-        """Process an image with MinerU 2.5.
+        """Process a single image with MinerU 2.5.
+        
+        For batch processing, use predict_all() or dataset.apply_model() which will
+        automatically use batching via the GetItem interface.
         
         Args:
             image: PIL Image or numpy array to process
-            sample: FiftyOne sample (not required for MinerU, included for compatibility)
+            sample: FiftyOne sample (optional, for compatibility)
         
         Returns:
             Model predictions in the appropriate format for the current operation:
-            - fo.Detections for "ocr_detection" operation
-            - str for "content" operation
+            - fo.Detections for "layout_detection" or "ocr_detection"
+            - str for "ocr"
         """
         if isinstance(image, np.ndarray):
             image = Image.fromarray(image)
