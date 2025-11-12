@@ -205,6 +205,14 @@ class MinerU(Model, SupportsGetItem):
         return None
     
     @property
+    def ragged_batches(self):
+        """Whether this model supports batches with varying sizes.
+        
+        Returns True since PIL Images can have different dimensions.
+        """
+        return True
+    
+    @property
     def operation(self):
         """Current operation mode."""
         return self._operation
