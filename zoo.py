@@ -236,6 +236,17 @@ class MinerU(Model, SupportsGetItem):
         """
         return MinerUGetItem()
     
+    def build_get_item(self, field_mapping=None):
+        """Build the GetItem transform for batching.
+        
+        Args:
+            field_mapping: Optional field mapping dict
+            
+        Returns:
+            MinerUGetItem: GetItem instance for loading images
+        """
+        return MinerUGetItem(field_mapping=field_mapping)
+    
     def _get_return_type(self):
         """Determine return type based on operation.
         
