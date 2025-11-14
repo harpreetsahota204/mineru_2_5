@@ -208,9 +208,10 @@ class MinerU(Model, SupportsGetItem):
     def ragged_batches(self):
         """Whether this model supports batches with varying sizes.
         
-        Returns True since PIL Images can have different dimensions.
+        Returns False to enable batching with batch_size > 1.
+        MinerU handles variable-size PIL Images internally.
         """
-        return True
+        return False
     
     @property
     def transforms(self):
