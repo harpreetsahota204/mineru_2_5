@@ -11,7 +11,7 @@ import torch
 
 import fiftyone as fo
 from fiftyone import Model
-from fiftyone.core.models import SupportsGetItem
+from fiftyone.core.models import SupportsGetItem, TorchModelMixin
 from fiftyone.utils.torch import GetItem
 
 from transformers import AutoProcessor, Qwen2VLForConditionalGeneration
@@ -98,7 +98,7 @@ class MinerUGetItem(GetItem):
         return image
 
 
-class MinerU(Model, SupportsGetItem):
+class MinerU(Model, SupportsGetItem, TorchModelMixin):
     """FiftyOne model for MinerU 2.5 document extraction with batching support.
     
     Supports three operation modes:
