@@ -229,6 +229,22 @@ class MinerU(Model, SupportsGetItem, TorchModelMixin):
         return None
     
     @property
+    def batch_size(self):
+        """Current batch size."""
+        return self._batch_size
+    
+    @batch_size.setter
+    def batch_size(self, value):
+        """Change batch size at runtime.
+        
+        Note: This updates the internal batch_size attribute but does not
+        recreate the MinerU client. For maximum effect, set batch_size
+        during model initialization.
+        """
+        self._batch_size = value
+        logger.info(f"Batch size changed to: {value}")
+    
+    @property
     def operation(self):
         """Current operation mode."""
         return self._operation
