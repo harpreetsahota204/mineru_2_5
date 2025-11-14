@@ -192,17 +192,23 @@ class MinerU(Model, SupportsGetItem):
     def has_collate_fn(self):
         """Whether this model provides a custom collate function.
         
-        Returns False since we use the default collation.
+        Returns True since we need custom collation for variable-size images.
         """
-        return False
+        return True
     
     @property
     def collate_fn(self):
         """Custom collate function for the DataLoader.
         
-        Not used since has_collate_fn returns False.
+        Returns batches as lists of PIL Images without stacking,
+        since MinerU handles variable-size images.
         """
-        return None
+        @staticmethod
+        def identity_collate(batch):
+            """Return batch as-is (list of PIL Images)."""
+            return batch
+        
+        return identity_collate
     
     @property
     def ragged_batches(self):
