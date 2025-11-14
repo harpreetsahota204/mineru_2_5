@@ -164,10 +164,10 @@ class MinerU(Model, SupportsGetItem, TorchModelMixin):
             backend="transformers",
             model=self.model,
             processor=self.processor,
-            batch_size=batch_size,
+            batch_size=self._batch_size,
         )
         
-        logger.info(f"MinerU 2.5 model loaded successfully (batch_size={batch_size})")
+        logger.info(f"MinerU 2.5 model loaded successfully (batch_size={self._batch_size})")
     
     @property
     def media_type(self):
@@ -237,11 +237,18 @@ class MinerU(Model, SupportsGetItem, TorchModelMixin):
     def batch_size(self, value):
         """Change batch size at runtime.
         
-        Note: This updates the internal batch_size attribute but does not
-        recreate the MinerU client. For maximum effect, set batch_size
-        during model initialization.
+        This recreates the MinerU client with the new batch size.
         """
         self._batch_size = value
+        
+        # Recreate client with new batch size
+        self.client = MinerUClient(
+            backend="transformers",
+            model=self.model,
+            processor=self.processor,
+            batch_size=self._batch_size,
+        )
+        
         logger.info(f"Batch size changed to: {value}")
     
     @property
