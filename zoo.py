@@ -213,6 +213,15 @@ class MinerU(Model, SupportsGetItem):
         return True
     
     @property
+    def transforms(self):
+        """The preprocessing transforms applied to inputs.
+        
+        For SupportsGetItem models, preprocessing happens in the GetItem
+        transform, so this returns None.
+        """
+        return None
+    
+    @property
     def operation(self):
         """Current operation mode."""
         return self._operation
